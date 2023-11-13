@@ -27,13 +27,13 @@ install: all
 	cp $(HEADERS) $(INC_DIR)/
 
 rv64: $(SRC_FILES)
-	riscv64-unknown-linux-gnu-g++ -Wall -static -c -o libsocketlib.o $^
-	ar rvs libsocketlib.a libsocketlib.o
+	riscv64-unknown-linux-gnu-g++ -Wall -static -c -o libsocketlibmmio.o $^
+	ar rvs libsocketlibmmio.a libsocketlibmmio.o
 	mkdir -p $(LIB_DIR)/rv64
-	cp libsocketlib.a $(LIB_DIR)/rv64/
+	cp libsocketlibmmio.a $(LIB_DIR)/rv64/
 
 rv32: $(SRC_FILES)
-	riscv32-unknown-linux-gnu-g++ -Wall -static -c -o libsocketlib.o $^
-	ar rvs libsocketlib.a libsocketlib.o
+	riscv32-unknown-linux-gnu-g++ -Wall -static -c -o libsocketlibmmio.o $^
+	ar rvs libsocketlibmmio.a libsocketlibmmio.o
 	mkdir -p $(LIB_DIR)/rv32
-	cp libsocketlib.a $(LIB_DIR)/rv32/
+	cp libsocketlibmmio.a $(LIB_DIR)/rv32/

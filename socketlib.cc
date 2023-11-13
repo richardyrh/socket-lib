@@ -1,23 +1,26 @@
 #include <stdlib.h>
 #include <vector>
 #include <queue>
-#include <fcntl.h>
-#include <unistd.h>
-#include <sys/socket.h>
-#include <sys/un.h>
-#include <arpa/inet.h>
+// #include <fcntl.h>
+// #include <unistd.h>
+// #include <sys/socket.h>
+// #include <sys/un.h>
+// #include <arpa/inet.h>
 #include <iostream>
 #include "socketlib.h"
 #include <stdbool.h>
 #include <stdint.h>
 #include <cstring>
 #include <algorithm>
+#include <cassert>
 
 #define MIN(x, y) (((x) < (y)) ? (x) : (y))
 
 int server_socket, new_socket;
+mmio_req_t *mreq = (mmio_req_t *) (0x90000000ULL);
+mmio_rsp_t *mrsp = (mmio_rsp_t *) (0x91000000ULL);
 
-void init_server(const uint32_t port) {
+/* void init_server(const uint32_t port) {
   struct sockaddr_in server_addr;
   struct sockaddr_storage server_storage;
   socklen_t addr_size;
@@ -81,6 +84,7 @@ void init_server_file(const char *socket_path) {
   std::cout << "Connection accepted" << std::endl;
 }
 
+
 void init_client(const uint32_t port) {
   init_client(port, NOSERV);
 }
@@ -105,13 +109,33 @@ void init_client(const uint32_t port, const endpoint_id_t endpoint_id) {
     exit(1);
   }
 }
+*/
+
+static uint64_t mmio_call(const uint64_t fid, const uint64_t a1, const uint64_t a2,
+    const uint64_t a3, const uint64_t a4, const char* payload, const size_t len) {
+  assert(!mreq->valid && !mrsp->valid);
+  mreq->func_id = fid;
+  mreq->a1 = a1;
+  mreq->a2 = a2;
+  mreq->a3 = a3;
+  mreq->a4 = a4;
+  if (payload != NULL) {
+    std::memcpy(&(mreq->payload), payload, len);
+  }
+  mreq->valid = true;
+  while (!mrsp->valid);
+  uint64_t retval = mrsp->ret;
+  mrsp->valid = false;
+  return retval;
+}
 
 void init_client_file(const char *socket_path) {
   init_client_file(socket_path, NOSERV);
 }
 
 void init_client_file(const char *socket_path, const endpoint_id_t endpoint_id) {
-  struct sockaddr_un addr;
+  mmio_call(M_CLIENT_FILE, (uint64_t) socket_path, (uint64_t) endpoint_id, 0, 0, NULL, 0);
+  /* struct sockaddr_un addr;
   new_socket = socket(AF_UNIX, SOCK_STREAM, 0);
   if (new_socket == -1) {
     std::cerr << "Failed to connect." << std::endl;
@@ -131,18 +155,26 @@ void init_client_file(const char *socket_path, const endpoint_id_t endpoint_id) 
   } else {
     std::cerr << "Failed to connect." << std::endl;
     exit(1);
-  }
+  } */
+}
+
+inline size_t recv_mmio(const int sockfd, const void* buf, const int len, const int flags) {
+  return mmio_call(M_RECV, sockfd, (uint64_t) buf, len, flags, NULL, 0);
+}
+
+inline size_t send_mmio(const int sockfd, const void* buf, const int len, const int flags) {
+  return mmio_call(M_SEND, sockfd, (uint64_t) buf, len, flags, NULL, 0);
 }
 
 std::deque<message_packet_t> received_packets;
 void fetch_packets() {
   message_header_t header;
-  while (recv(new_socket, &header, sizeof(header), MSG_PEEK | MSG_DONTWAIT) > 0) { // more data to come
+  while (recv_mmio(new_socket, &header, sizeof(header), _MSG_PEEK | _MSG_DONTWAIT) > 0) { // more data to come
 #ifdef SOCKETLIB_VERBOSE
     std::cout << "DEBUG: new data is arriving" << std::endl;
 #endif
     // fcntl(new_socket, F_SETFL, 0);
-    ssize_t header_bytes_received = recv(new_socket, &header, sizeof(message_header_t), 0);
+    ssize_t header_bytes_received = recv_mmio(new_socket, &header, sizeof(message_header_t), 0);
     if (header_bytes_received != sizeof(message_header_t)) {
       // TODO: maybe put this in a loop to ensure we receive the header
       std::cerr << "Error receiving header: " << errno << std::endl;
@@ -158,7 +190,7 @@ void fetch_packets() {
     size_t bytes_received = 0;
     while (bytes_received < header.size - sizeof(message_header_t)) {
         size_t chunk_size = MIN(1024ul, header.size - sizeof(message_header_t) - bytes_received);
-        ssize_t chunk_bytes_received = recv(new_socket, message_data + bytes_received, chunk_size, 0);
+        ssize_t chunk_bytes_received = recv_mmio(new_socket, message_data + bytes_received, chunk_size, 0);
         if (chunk_bytes_received == -1) {
           std::cerr << "Error receiving message data: " << errno << " " << strerror(errno) << std::endl;
           exit(-1);
@@ -226,12 +258,12 @@ int socket_send(const endpoint_id_t endpoint_id, const func_id_t func_id, const 
   header.func_id = func_id;
 
   // fcntl(new_socket, F_SETFL, 0);
-  if ((size_t) send(new_socket, &header, sizeof(header), 0) != sizeof(header)) {
+  if ((size_t) send_mmio(new_socket, &header, sizeof(header), 0) != sizeof(header)) {
     std::cout << "DEBUG: failed to send header" << std::endl;
     return -1;
   }
 
-  if ((size_t) send(new_socket, args.data(), args.size(), 0) != args.size()) {
+  if ((size_t) send_mmio(new_socket, args.data(), args.size(), 0) != args.size()) {
     std::cout << "DEBUG: failed to send args" << std::endl;
     return -1;
   }
@@ -239,7 +271,7 @@ int socket_send(const endpoint_id_t endpoint_id, const func_id_t func_id, const 
   for (size_t i = 0; i < payload.size();) {
     size_t chunk_size = MIN(1024ul, payload.size() - i);
     const char* data_ptr = payload.data() + i;
-    ssize_t bytes_sent = send(new_socket, data_ptr, chunk_size, 0);
+    ssize_t bytes_sent = send_mmio(new_socket, data_ptr, chunk_size, 0);
 #ifdef SOCKETLIB_VERBOSE
     std::cout << "DEBUG: sent " << bytes_sent << " bytes" << std::endl;
 #endif

@@ -46,3 +46,26 @@ void deserialize_args(const std::vector<char> &source_buf, TT &result) {
 }
 
 static const std::vector<char> empty_vec;
+
+#define M_CLIENT_FILE 1
+#define M_SEND 2
+#define M_RECV 3
+
+typedef struct {
+  uint64_t valid;
+  uint64_t func_id;
+  uint64_t a1;
+  uint64_t a2;
+  uint64_t a3;
+  uint64_t a4;
+  char *dst;
+  char payload[];
+} mmio_req_t;
+
+typedef struct {
+  uint64_t ret;
+  uint64_t valid;
+} mmio_rsp_t;
+
+#define _MSG_PEEK 2
+#define _MSG_DONTWAIT 64
