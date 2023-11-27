@@ -12,6 +12,7 @@
 #define MIN(x, y) (((x) < (y)) ? (x) : (y))
 
 int server_socket, new_socket;
+uint64_t socket_cycles;
 
 #define MAX_DEQUE_SIZE 64
 #define HEAP_SPACE MAX_DEQUE_SIZE * 2048
@@ -67,6 +68,22 @@ uint64_t mmio_call(const uint64_t fid, const uint64_t a1, const uint64_t a2,
   return retval;
 }
 
+inline static uint64_t sock_read_cycles() {
+  uint64_t cycles;
+  asm volatile ("rdcycle %0" : "=r" (cycles));
+  return cycles;
+}
+
+#ifdef C_ONLY
+#define CYCLES_START() \
+  uint64_t ent_cycles = sock_read_cycles();
+#define CYCLES_END() \
+  socket_cycles = socket_cycles + (sock_read_cycles() - ent_cycles);
+#else
+#define CYCLES_START()
+#define CYCLES_END()
+#endif
+
 #ifndef C_ONLY
 void init_client_file(const char *socket_path) {
   init_client_file(socket_path, NOSERV);
@@ -74,11 +91,13 @@ void init_client_file(const char *socket_path) {
 #endif
 
 void init_client_file(const char *socket_path, const endpoint_id_t endpoint_id) {
+  CYCLES_START()
   received_packets.front = -1;
   received_packets.rear = -1;
   received_packets.size = 0;
   printf("init client file %p\n", socket_path);
   new_socket = mmio_call(M_CLIENT_FILE, (uint64_t) socket_path, (uint64_t) endpoint_id, 0, 0, NULL, 0);
+  CYCLES_END()
 }
 
 inline size_t recv_mmio(const int sockfd, const void* buf, const int len, const int flags) {
@@ -139,6 +158,7 @@ void fetch_packets() {
 }
 
 int socket_receive_c(const func_id_t func_id, const bool blocking, char **dest_buf) {
+  CYCLES_START()
   // check for qualifying messages
   // if not found, fetch from socket
   // if blocking, fetch & check in a loop
@@ -157,11 +177,13 @@ int socket_receive_c(const func_id_t func_id, const bool blocking, char **dest_b
       }
     }
   }
+  CYCLES_END()
   return (int) src_id;
 }
 
 int socket_send_c(const endpoint_id_t endpoint_id, const func_id_t func_id,
     const char *args, const int args_len, const char *payload, const int payload_len) {
+  CYCLES_START()
   message_header_t header;
   header.size = sizeof(message_header_t) + args_len + payload_len;
   header.src_id = NOSERV; // will be overriden by server
@@ -170,10 +192,12 @@ int socket_send_c(const endpoint_id_t endpoint_id, const func_id_t func_id,
 
   if ((uint64_t) send_mmio(new_socket, &header, sizeof(header), 0) != sizeof(header)) {
     printf("ERROR: DEBUG: failed to send header\n");
+    CYCLES_END()
     return -1;
   }
   if ((uint64_t) send_mmio(new_socket, args, args_len, 0) != (uint64_t) args_len) {
     printf("ERROR: DEBUG: failed to send args\n");
+    CYCLES_END()
     return -1;
   }
 
@@ -187,8 +211,10 @@ int socket_send_c(const endpoint_id_t endpoint_id, const func_id_t func_id,
     i += bytes_sent;
     if (bytes_sent == -1) {
       printf("ERROR: DEBUG: failed to send everything\n");
+      CYCLES_END()
       return -1;
     }
   }
+  CYCLES_END()
   return 0;
 }
