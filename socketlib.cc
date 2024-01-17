@@ -3,7 +3,6 @@
 #include <stdbool.h>
 #include <stdint.h>
 #ifndef C_ONLY
-#include <cerror>
 #include <cstring>
 #else
 #include <string.h>
@@ -80,8 +79,12 @@ inline static uint64_t sock_read_cycles() {
 #define CYCLES_END() \
   socket_cycles = socket_cycles + (sock_read_cycles() - ent_cycles);
 #else
-#define CYCLES_START()
-#define CYCLES_END()
+#define CYCLES_START() \
+  uint64_t ent_cycles = sock_read_cycles();
+#define CYCLES_END() \
+  socket_cycles = socket_cycles + (sock_read_cycles() - ent_cycles);
+// #define CYCLES_START()
+// #define CYCLES_END()
 #endif
 
 #ifndef C_ONLY
@@ -97,6 +100,16 @@ void init_client_file(const char *socket_path, const endpoint_id_t endpoint_id) 
   received_packets.size = 0;
   printf("init client file %p\n", socket_path);
   new_socket = mmio_call(M_CLIENT_FILE, (uint64_t) socket_path, (uint64_t) endpoint_id, 0, 0, NULL, 0);
+  CYCLES_END()
+}
+
+void init_client(const uint32_t port, const endpoint_id_t endpoint_id) {
+  CYCLES_START()
+  received_packets.front = -1;
+  received_packets.rear = -1;
+  received_packets.size = 0;
+  printf("init client port %d\n", port);
+  new_socket = mmio_call(M_CLIENT_PORT, (uint64_t) port, (uint64_t) endpoint_id, 0, 0, NULL, 0);
   CYCLES_END()
 }
 
@@ -121,7 +134,7 @@ void fetch_packets() {
     // fcntl(new_socket, F_SETFL, 0);
     ssize_t header_bytes_received = recv_mmio(new_socket, &header, sizeof(message_header_t), 0);
     if (header_bytes_received != sizeof(message_header_t)) {
-      printf("ERROR: Error receiving header\n");
+      printf("ERROR: Error receiving header; received %d bytes\n", header_bytes_received);
     }
     char *message_data = (char *) hmalloc(header.size - sizeof(message_header_t));
 #ifdef SOCKETLIB_VERBOSE

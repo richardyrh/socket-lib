@@ -13,6 +13,7 @@ typedef uint16_t func_id_t;
 
 #define NOSERV 255
 
+void init_client(const uint32_t port, const uint8_t endpoint_id);
 void init_client_file(const char *socket_path, const uint8_t endpoint_id);
 
 int socket_receive_c(const func_id_t func_id, const bool blocking, char **dest_buf);
@@ -34,7 +35,6 @@ typedef struct message_packet {
 #ifndef C_ONLY
 void init_server(const uint32_t port);
 void init_server_file(const char *socket_path);
-void init_client(const uint32_t port, const uint8_t endpoint_id);
 void init_client(const uint32_t port);
 void init_client_file(const char *socket_path);
 
@@ -60,6 +60,7 @@ static const std::vector<char> empty_vec;
 #define M_CLIENT_FILE 1
 #define M_SEND 2
 #define M_RECV 3
+#define M_CLIENT_PORT 4
 
 typedef struct {
   uint64_t valid;
